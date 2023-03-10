@@ -69,23 +69,26 @@ pub fn render(
             pub use #mod_derived as #name_snake_case;
         })
     } else {
-        let regspec_ident = format!("{name}_SPEC").to_constant_case_ident(span);
+        let regspec_ident = format!("{name}").to_constant_case_ident(span);
         let access = util::access_of(&register.properties, register.fields.as_deref());
-        let accs = if access.can_read() && access.can_write() {
-            "rw"
-        } else if access.can_write() {
-            "w"
-        } else if access.can_read() {
-            "r"
-        } else {
-            return Err(anyhow!("Incorrect access of register {}", register.name));
-        };
-        let alias_doc =
-            format!("{name} ({accs}) register accessor: an alias for `Reg<{regspec_ident}>`");
+        // let accs = if access.can_read() && access.can_write() {
+        //     "rw"
+        // } else if access.can_write() {
+        //     "w"
+        // } else if access.can_read() {
+        //     "r"
+        // } else {
+        //     return Err(anyhow!("Incorrect access of register {}", register.name));
+        // };
+        // let alias_doc =
+        //     format!("{name} ({accs}) register accessor: an alias for `Reg<{regspec_ident}>`");
         let mut out = TokenStream::new();
+        // out.extend(quote! {
+        //     #[doc = #alias_doc]
+        //     pub type #name_constant_case = crate::Reg<#name_snake_case::#regspec_ident>;
+        // });
         out.extend(quote! {
-            #[doc = #alias_doc]
-            pub type #name_constant_case = crate::Reg<#name_snake_case::#regspec_ident>;
+            pub use #name_snake_case::#regspec_ident;
         });
         let mod_items = render_register_mod(
             register,
@@ -116,7 +119,7 @@ pub fn render_register_mod(
     let properties = &register.properties;
     let name = util::name_of(register, config.ignore_groups);
     let span = Span::call_site();
-    let regspec_ident = format!("{name}_SPEC").to_constant_case_ident(span);
+    let regspec_ident = format!("{name}").to_constant_case_ident(span);
     let name_snake_case = name.to_snake_case_ident(span);
     let rsize = properties
         .size
@@ -155,6 +158,23 @@ pub fn render_register_mod(
             #[doc = #desc]
             #derive
             pub struct R(crate::R<#regspec_ident>);
+
+            impl core::convert::From<u8> for R {
+                fn from(original: u8) -> R {
+                    R(
+                        crate::R {
+                            bits: original,
+                            _reg: core::marker::PhantomData,
+                        }
+                    )
+                }
+            }
+
+            impl core::convert::From<R> for u8 {
+                fn from(original: R) -> u8 {
+                    original.0.bits
+                }
+            }
         });
 
         if !config.derive_more {
@@ -190,6 +210,23 @@ pub fn render_register_mod(
             #[doc = #desc]
             #derive
             pub struct W(crate::W<#regspec_ident>);
+
+            impl core::convert::From<u8> for W {
+                fn from(original: u8) -> W {
+                    W(
+                        crate::W {
+                            bits: original,
+                            _reg: core::marker::PhantomData,
+                        }
+                    )
+                }
+            }
+
+            impl core::convert::From<W> for u8 {
+                fn from(original: W) -> u8 {
+                    original.0.bits
+                }
+            }
         });
 
         if !config.derive_more {
@@ -218,6 +255,7 @@ pub fn render_register_mod(
                 }
             });
         }
+
         methods.push("write_with_zero");
         if can_reset {
             methods.push("reset");
@@ -340,12 +378,13 @@ pub fn render_register_mod(
         }
     }
 
+    let address = register.address_offset as u8;
     mod_items.extend(quote! {
         #[doc = #doc]
         pub struct #regspec_ident;
 
         impl crate::RegisterSpec for #regspec_ident {
-            type Ux = #rty;
+            const ADDRESS: u8 = #address;
         }
     });
 
@@ -369,8 +408,8 @@ pub fn render_register_mod(
             #[doc = #doc]
             impl crate::Writable for #regspec_ident {
                 type Writer = W;
-                const ZERO_TO_MODIFY_FIELDS_BITMAP: Self::Ux = #zero_to_modify_fields_bitmap;
-                const ONE_TO_MODIFY_FIELDS_BITMAP: Self::Ux = #one_to_modify_fields_bitmap;
+                const ZERO_TO_MODIFY_FIELDS_BITMAP: u8 = #zero_to_modify_fields_bitmap;
+                const ONE_TO_MODIFY_FIELDS_BITMAP: u8 = #one_to_modify_fields_bitmap;
             }
         });
     }
@@ -379,7 +418,7 @@ pub fn render_register_mod(
         mod_items.extend(quote! {
             #[doc = #doc]
             impl crate::Resettable for #regspec_ident {
-                const RESET_VALUE: Self::Ux = #rv;
+                const RESET_VALUE: u8 = #rv;
             }
         });
     }
@@ -547,7 +586,8 @@ pub fn fields(
                 let reader = if width == 1 {
                     quote! { crate::BitReader<#value_read_ty> }
                 } else {
-                    quote! { crate::FieldReader<#fty, #value_read_ty> }
+                    quote! { crate::FieldReader<#value_read_ty> }
+                    // quote! { crate::FieldReader<#fty, #value_read_ty> }
                 };
                 let mut readerdoc = field_reader_brief.clone();
                 if let Some(action) = f.read_action {
@@ -868,7 +908,8 @@ pub fn fields(
                         },
                         span,
                     );
-                    quote! { crate::#wproxy<'a, #rty, #regspec_ident, #value_write_ty, O> }
+                    // quote! { crate::#wproxy<'a, #rty, #regspec_ident, #value_write_ty, O> }
+                    quote! { crate::#wproxy<'a, #regspec_ident, #value_write_ty, O> }
                 } else {
                     let wproxy = Ident::new(
                         if unsafety {
@@ -879,7 +920,8 @@ pub fn fields(
                         span,
                     );
                     let width = &util::unsuffixed(width as _);
-                    quote! { crate::#wproxy<'a, #rty, #regspec_ident, #fty, #value_write_ty, #width, O> }
+                    quote! { crate::#wproxy<'a, #regspec_ident, #fty, #value_write_ty, #width, O> }
+                    // quote! { crate::#wproxy<'a, #rty, #regspec_ident, #fty, #value_write_ty, #width, O> }
                 };
                 mod_items.extend(quote! {
                     #[doc = #field_writer_brief]

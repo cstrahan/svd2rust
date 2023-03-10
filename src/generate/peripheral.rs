@@ -35,10 +35,10 @@ pub fn render(p_original: &Peripheral, index: &Index, config: &Config) -> Result
 
     let name = util::name_of(&p, config.ignore_groups);
     let span = Span::call_site();
-    let name_str = name.to_sanitized_constant_case();
-    let name_constant_case = Ident::new(&name_str, span);
-    let address = util::hex(p.base_address);
-    let description = util::respace(p.description.as_ref().unwrap_or(&p.name));
+    // let name_str = name.to_sanitized_constant_case();
+    // let name_constant_case = Ident::new(&name_str, span);
+    // let address = util::hex(p.base_address);
+    // let description = util::respace(p.description.as_ref().unwrap_or(&p.name));
 
     let name_snake_case = name.to_snake_case_ident(span);
     let (derive_regs, base, path) = if let Some(path) = path {
@@ -53,140 +53,140 @@ pub fn render(p_original: &Peripheral, index: &Index, config: &Config) -> Result
         feature_attribute.extend(quote! { #[cfg(feature = #feature_name)] });
     };
 
-    match &p {
-        Peripheral::Array(p, dim) => {
-            let names: Vec<Cow<str>> = names(p, dim).map(|n| n.into()).collect();
-            let names_str = names.iter().map(|n| n.to_sanitized_constant_case());
-            let names_constant_case = names_str.clone().map(|n| Ident::new(&n, span));
-            let addresses =
-                (0..=dim.dim).map(|i| util::hex(p.base_address + (i * dim.dim_increment) as u64));
-            let snake_names = names
-                .iter()
-                .map(|p_name| p_name.to_sanitized_snake_case())
-                .collect::<Vec<_>>();
-            let feature_attribute_n = snake_names.iter().map(|p_snake| {
-                let mut feature_attribute = feature_attribute.clone();
-                if config.feature_peripheral {
-                    feature_attribute.extend(quote! { #[cfg(feature = #p_snake)] })
-                };
-                feature_attribute
-            });
-            // Insert the peripherals structure
-            out.extend(quote! {
-                #(
-                    #[doc = #description]
-                    #feature_attribute_n
-                    pub struct #names_constant_case { _marker: PhantomData<*const ()> }
+    // match &p {
+    //     Peripheral::Array(p, dim) => {
+    //         let names: Vec<Cow<str>> = names(p, dim).map(|n| n.into()).collect();
+    //         let names_str = names.iter().map(|n| n.to_sanitized_constant_case());
+    //         let names_constant_case = names_str.clone().map(|n| Ident::new(&n, span));
+    //         let addresses =
+    //             (0..=dim.dim).map(|i| util::hex(p.base_address + (i * dim.dim_increment) as u64));
+    //         let snake_names = names
+    //             .iter()
+    //             .map(|p_name| p_name.to_sanitized_snake_case())
+    //             .collect::<Vec<_>>();
+    //         let feature_attribute_n = snake_names.iter().map(|p_snake| {
+    //             let mut feature_attribute = feature_attribute.clone();
+    //             if config.feature_peripheral {
+    //                 feature_attribute.extend(quote! { #[cfg(feature = #p_snake)] })
+    //             };
+    //             feature_attribute
+    //         });
+    //         // Insert the peripherals structure
+    //         out.extend(quote! {
+    //             #(
+    //                 #[doc = #description]
+    //                 #feature_attribute_n
+    //                 pub struct #names_constant_case { _marker: PhantomData<*const ()> }
 
-                    #feature_attribute_n
-                    unsafe impl Send for #names_constant_case {}
+    //                 #feature_attribute_n
+    //                 unsafe impl Send for #names_constant_case {}
 
-                    #feature_attribute_n
-                    impl #names_constant_case {
-                        ///Pointer to the register block
-                        pub const PTR: *const #base::RegisterBlock = #addresses as *const _;
+    //                 #feature_attribute_n
+    //                 impl #names_constant_case {
+    //                     ///Pointer to the register block
+    //                     pub const PTR: *const #base::RegisterBlock = #addresses as *const _;
 
-                        ///Return the pointer to the register block
-                        #[inline(always)]
-                        pub const fn ptr() -> *const #base::RegisterBlock {
-                            Self::PTR
-                        }
-                    }
+    //                     ///Return the pointer to the register block
+    //                     #[inline(always)]
+    //                     pub const fn ptr() -> *const #base::RegisterBlock {
+    //                         Self::PTR
+    //                     }
+    //                 }
 
-                    #feature_attribute_n
-                    impl Deref for #names_constant_case {
-                        type Target = #base::RegisterBlock;
+    //                 #feature_attribute_n
+    //                 impl Deref for #names_constant_case {
+    //                     type Target = #base::RegisterBlock;
 
-                        #[inline(always)]
-                        fn deref(&self) -> &Self::Target {
-                            unsafe { &*Self::PTR }
-                        }
-                    }
+    //                     #[inline(always)]
+    //                     fn deref(&self) -> &Self::Target {
+    //                         unsafe { &*Self::PTR }
+    //                     }
+    //                 }
 
-                    #feature_attribute_n
-                    impl core::fmt::Debug for #names_constant_case {
-                        fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                            f.debug_struct(#names_str).finish()
-                        }
-                    }
-                )*
-            });
+    //                 #feature_attribute_n
+    //                 impl core::fmt::Debug for #names_constant_case {
+    //                     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    //                         f.debug_struct(#names_str).finish()
+    //                     }
+    //                 }
+    //             )*
+    //         });
 
-            let feature_any_attribute = quote! {#[cfg(any(#(feature = #snake_names),*))]};
+    //         let feature_any_attribute = quote! {#[cfg(any(#(feature = #snake_names),*))]};
 
-            // Derived peripherals may not require re-implementation, and will instead
-            // use a single definition of the non-derived version.
-            if derive_regs {
-                // re-export the base module to allow deriveFrom this one
-                out.extend(quote! {
-                    #[doc = #description]
-                    #feature_any_attribute
-                    pub use self::#base as #name_snake_case;
-                });
-                return Ok(out);
-            }
-        }
-        Peripheral::Single(_) => {
-            let p_snake = name.to_sanitized_snake_case();
-            if config.feature_peripheral {
-                feature_attribute.extend(quote! { #[cfg(feature = #p_snake)] })
-            };
-            // Insert the peripheral structure
-            out.extend(quote! {
-                #[doc = #description]
-                #feature_attribute
-                pub struct #name_constant_case { _marker: PhantomData<*const ()> }
+    //         // Derived peripherals may not require re-implementation, and will instead
+    //         // use a single definition of the non-derived version.
+    //         if derive_regs {
+    //             // re-export the base module to allow deriveFrom this one
+    //             out.extend(quote! {
+    //                 #[doc = #description]
+    //                 #feature_any_attribute
+    //                 pub use self::#base as #name_snake_case;
+    //             });
+    //             return Ok(out);
+    //         }
+    //     }
+    //     Peripheral::Single(_) => {
+    //         let p_snake = name.to_sanitized_snake_case();
+    //         if config.feature_peripheral {
+    //             feature_attribute.extend(quote! { #[cfg(feature = #p_snake)] })
+    //         };
+    //         // Insert the peripheral structure
+    //         out.extend(quote! {
+    //             #[doc = #description]
+    //             #feature_attribute
+    //             pub struct #name_constant_case { _marker: PhantomData<*const ()> }
 
-                #feature_attribute
-                unsafe impl Send for #name_constant_case {}
+    //             #feature_attribute
+    //             unsafe impl Send for #name_constant_case {}
 
-                #feature_attribute
-                impl #name_constant_case {
-                    ///Pointer to the register block
-                    pub const PTR: *const #base::RegisterBlock = #address as *const _;
+    //             #feature_attribute
+    //             impl #name_constant_case {
+    //                 ///Pointer to the register block
+    //                 pub const PTR: *const #base::RegisterBlock = #address as *const _;
 
-                    ///Return the pointer to the register block
-                    #[inline(always)]
-                    pub const fn ptr() -> *const #base::RegisterBlock {
-                        Self::PTR
-                    }
-                }
+    //                 ///Return the pointer to the register block
+    //                 #[inline(always)]
+    //                 pub const fn ptr() -> *const #base::RegisterBlock {
+    //                     Self::PTR
+    //                 }
+    //             }
 
-                #feature_attribute
-                impl Deref for #name_constant_case {
-                    type Target = #base::RegisterBlock;
+    //             #feature_attribute
+    //             impl Deref for #name_constant_case {
+    //                 type Target = #base::RegisterBlock;
 
-                    #[inline(always)]
-                    fn deref(&self) -> &Self::Target {
-                        unsafe { &*Self::PTR }
-                    }
-                }
+    //                 #[inline(always)]
+    //                 fn deref(&self) -> &Self::Target {
+    //                     unsafe { &*Self::PTR }
+    //                 }
+    //             }
 
-                #feature_attribute
-                impl core::fmt::Debug for #name_constant_case {
-                    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                        f.debug_struct(#name_str).finish()
-                    }
-                }
-            });
+    //             #feature_attribute
+    //             impl core::fmt::Debug for #name_constant_case {
+    //                 fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    //                     f.debug_struct(#name_str).finish()
+    //                 }
+    //             }
+    //         });
 
-            // Derived peripherals may not require re-implementation, and will instead
-            // use a single definition of the non-derived version.
-            if derive_regs {
-                // re-export the base module to allow deriveFrom this one
-                out.extend(quote! {
-                    #[doc = #description]
-                    #feature_attribute
-                    pub use self::#base as #name_snake_case;
-                });
-                return Ok(out);
-            }
-        }
-    }
+    //         // Derived peripherals may not require re-implementation, and will instead
+    //         // use a single definition of the non-derived version.
+    //         if derive_regs {
+    //             // re-export the base module to allow deriveFrom this one
+    //             out.extend(quote! {
+    //                 #[doc = #description]
+    //                 #feature_attribute
+    //                 pub use self::#base as #name_snake_case;
+    //             });
+    //             return Ok(out);
+    //         }
+    //     }
+    // }
 
-    let description = util::escape_special_chars(
-        util::respace(p.description.as_ref().unwrap_or(&name.as_ref().to_owned())).as_ref(),
-    );
+    // let description = util::escape_special_chars(
+    //     util::respace(p.description.as_ref().unwrap_or(&name.as_ref().to_owned())).as_ref(),
+    // );
 
     // Build up an alternate erc list by expanding any derived registers/clusters
     // erc: *E*ither *R*egister or *C*luster
@@ -222,21 +222,21 @@ pub fn render(p_original: &Peripheral, index: &Index, config: &Config) -> Result
         "Pushing {} register or cluster blocks into output",
         ercs.len()
     );
-    let reg_block = register_or_cluster_block(&ercs, &derive_infos, None, None, config)?;
+    // let reg_block = register_or_cluster_block(&ercs, &derive_infos, None, None, config)?;
 
-    let open = Punct::new('{', Spacing::Alone);
-    let close = Punct::new('}', Spacing::Alone);
+    // let open = Punct::new('{', Spacing::Alone);
+    // let close = Punct::new('}', Spacing::Alone);
 
-    out.extend(quote! {
-        #[doc = #description]
-        #feature_attribute
-        pub mod #name_snake_case #open
-    });
+    // out.extend(quote! {
+    //     #[doc = #description]
+    //     #feature_attribute
+    //     pub mod #name_snake_case #open
+    // });
 
-    out.extend(reg_block);
+    // out.extend(reg_block);
     out.extend(mod_items);
 
-    close.to_tokens(&mut out);
+    // close.to_tokens(&mut out);
 
     p.registers = Some(ercs);
 
